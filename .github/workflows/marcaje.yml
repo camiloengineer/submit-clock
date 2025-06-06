@@ -29,6 +29,6 @@ jobs:
             echo "No hay dependencias que instalar"
           fi
 
-      - name: Ejecutar script
+      - name: Ejecutar script main.py
         run: |
-          python script.py
+          python main.py
