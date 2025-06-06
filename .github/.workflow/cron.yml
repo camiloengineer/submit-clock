@@ -1,0 +1,26 @@
+name: Marcaje automático
+
+on:
+  schedule:
+    - cron: "10 12 * * 1-5" # 08:10 hora Chile
+    - cron: "30 21 * * 1-5" # 17:30 hora Chile
+  workflow_dispatch: # Permite ejecución manual
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+    env:
+      EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v3
+
+      - name: Instalar dependencias
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y chromium-driver chromium-browser
+          python3 -m pip install --upgrade pip
+          pip install selenium
+
+      - name: Ejecutar script de marcaje
+        run: python3 main.py

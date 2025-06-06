@@ -1,0 +1,42 @@
+# Archivos de entorno y secretos
+.env
+*.env
+*.secret
+*.key
+
+# Archivos de logs
+*.log
+marcaje.log
+
+# Archivos del sistema operativo
+.DS_Store
+Thumbs.db
+
+# Archivos de Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Entornos virtuales
+venv/
+env/
+.venv/
+.venv
+
+# Archivos creados por el IDE
+.vscode/
+.idea/
+*.swp
+
+# Chromedriver o binarios que puedas usar localmente
+chromedriver
+chromedriver.exe
+
+# Archivos de compilación u objetos temporales
+*.so
+*.out
+*.bak
+
+# Archivos personales o de configuración local
+*.local
