@@ -1,6 +1,8 @@
 import random
 import smtplib
 import logging
+import os
+
 from time import sleep
 from datetime import datetime
 from email.message import EmailMessage
@@ -9,12 +11,12 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 
 # MODO DEBUG
-debug = True  # Cambiar a True para desactivar la marcación y solo hacer pruebas de notificación
+debug = False  # Cambiar a True para desactivar la marcación y solo hacer pruebas de notificación
 
 # CONFIGURACIÓN DEL CORREO
 EMAIL_FROM = "camilo@camiloengineer.com"
 EMAIL_TO = "camilo@camiloengineer.com"
-EMAIL_PASS = "mbgq asiy vfaa wdit"
+EMAIL_PASS = os.getenv("EMAIL_PASS")
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 
