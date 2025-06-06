@@ -31,4 +31,4 @@ jobs:
 
       - name: Ejecutar script
         run: |
-          python script.py
+          python main.py
