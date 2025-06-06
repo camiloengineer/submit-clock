@@ -4,7 +4,7 @@ on:
   schedule:
     - cron: "10 12 * * 1-5" # 08:10 CLT
     - cron: "30 21 * * 1-5" # 17:30 CLT
-  workflow_dispatch:
+  workflow_dispatch: # Permite ejecutarlo manualmente desde GitHub UI
 
 jobs:
   marcar-turno:
