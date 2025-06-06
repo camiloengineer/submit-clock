@@ -35,9 +35,21 @@ sleep(delay_min * 60)
 
 # MARCAJE AUTOMÁTICO SOLO SI debug ES FALSO
 try:
-    now = datetime.now()
-    current_hour = now.hour
-    action_type = "ENTRADA" if current_hour < 12 else "SALIDA"
+    # OBTENER HORA UTC Y CONVERTIR A CHILE
+    utc_now = datetime.utcnow()
+    # Chile está UTC-3 (la mayor parte del año) o UTC-4 (invierno)
+    # Ajustamos -4 horas para ser conservadores
+    chile_hour = (utc_now.hour - 4) % 24
+
+    # Para logging y mensajes, calculamos la hora completa de Chile
+    chile_time = datetime(utc_now.year, utc_now.month,
+                          utc_now.day, chile_hour, utc_now.minute, utc_now.second)
+
+    action_type = "ENTRADA" if chile_hour < 12 else "SALIDA"
+
+    print(f"🕐 Hora UTC: {utc_now.strftime('%H:%M:%S')}")
+    print(f"🇨🇱 Hora Chile (estimada): {chile_time.strftime('%H:%M:%S')}")
+    print(f"📍 Tipo de marcaje: {action_type}")
 
     if not debug:
         logging.info("Iniciando navegador en modo headless.")
@@ -85,10 +97,10 @@ try:
         enviar.click()
         sleep(1)
 
-        mensaje = f"✅ {action_type} realizada con éxito a las {now.strftime('%H:%M:%S')}."
+        mensaje = f"✅ {action_type} realizada con éxito a las {chile_time.strftime('%H:%M:%S')} (Chile)."
         logging.info(mensaje)
     else:
-        mensaje = f"🧪 DEBUG activo: no se ejecutó marcaje. Hora simulada: {now.strftime('%H:%M:%S')}"
+        mensaje = f"🧪 DEBUG activo: no se ejecutó marcaje. Hora Chile: {chile_time.strftime('%H:%M:%S')}"
         logging.info(mensaje)
 
     # Enviar correo de confirmación
