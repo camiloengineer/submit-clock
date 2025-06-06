@@ -28,7 +28,7 @@ logging.basicConfig(
 )
 
 # RETARDO ALEATORIO DE 1 A 20 MINUTOS
-delay_min = random.randint(1, 2)
+delay_min = random.randint(1, 20)
 logging.info(f"Esperando {delay_min} minutos antes de ejecutar el script.")
 print(f"⏳ Esperando {delay_min} minutos antes de iniciar marcaje...")
 sleep(delay_min * 60)
