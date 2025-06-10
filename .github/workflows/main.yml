@@ -37,6 +37,9 @@ jobs:
             echo "No hay dependencias que instalar"
           fi
 
+      - name: Crear directorio de logs
+        run: mkdir -p logs
+
       - name: Ejecutar script main.py
         run: |
           echo "🚀 Iniciando script de marcaje..."
@@ -44,11 +47,19 @@ jobs:
           echo "✅ Script finalizado"
         env:
           PYTHONUNBUFFERED: 1
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+
+      - name: Listar archivos de log
+        if: always()
+        run: |
+          echo "📁 Contenido del directorio logs:"
+          ls -la logs/
 
       - name: Subir archivo de logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: marcaje-logs-${{ github.run_number }}
-          path: logs/*.log
+          path: |
+            logs/
           retention-days: 30
