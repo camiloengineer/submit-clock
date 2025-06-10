@@ -5,7 +5,7 @@ on:
     - cron: "10 12 * * 1-5" # 08:10 CLT (Lunes a Viernes)
     - cron: "30 21 * * 1-5" # 17:30 CLT (Lunes a Viernes)
   push:
-    branches: ["main"] # Se activará con commits en la rama main
+    branches: ["main"]
   workflow_dispatch:
 
 jobs:
@@ -18,6 +18,7 @@ jobs:
       EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
       LAUNCHDARKLY_SDK_KEY: ${{ secrets.LAUNCHDARKLY_SDK_KEY }}
       USER_RUT: ${{ secrets.USER_RUT }}
+      TZ: "America/Santiago" # Added timezone for Chile
 
     steps:
       - name: Checkout del repositorio
@@ -48,6 +49,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: marcaje-logs-${{ github.run_number }}-$(date +'%Y-%m-%d')
-          path: marcaje.log
+          name: marcaje-logs-${{ github.run_number }}
+          path: |
+            logs/marcaje-logs-*-${{ github.run_date }}.log
           retention-days: 30

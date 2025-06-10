@@ -18,26 +18,30 @@ from selenium.webdriver.common.by import By
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List
+from geopy.geocoders import Nominatim
+from geopy.exc import GeocoderTimedOut
+import googlemaps
 
 # Disable only the single InsecureRequestWarning from urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Create logs directory if it doesn't exist
-logs_dir = "logs"
+logs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 os.makedirs(logs_dir, exist_ok=True)
 
-# Generate log filename with timestamp
+# Generate log filename with pattern
 current_date = datetime.now().strftime('%Y-%m-%d')
-run_number = 1  # You can implement a counter if needed
 
-log_filename = f"marcaje-logs-{run_number}-{current_date}.log"
+# If in GitHub Actions use run number, otherwise use '*'
+log_filename = f"marcaje-logs-{os.getenv('GITHUB_RUN_NUMBER', '*')}-{current_date}.log"
 log_filepath = os.path.join(logs_dir, log_filename)
 
 # CONFIGURACIÓN DE LOGS
 logging.basicConfig(
     filename=log_filepath,
     level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
+    format="%(asctime)s-%(levelname)s-%(message)s",  # Removed spaces
+    force=True
 )
 
 logging.info(f"Iniciando logging en archivo: {log_filepath}")
@@ -105,10 +109,10 @@ EMAIL_TO = EMAIL
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 
-# COORDENADAS POR UBICACIÓN
+# CÓDIGOS POSTALES POR UBICACIÓN
 LOCATIONS = {
-    "HomeWork": {"latitude": "-33.4147", "longitude": "-70.5983"},
-    "PresentialWork": {"latitude": "-33.5169", "longitude": "-70.7571"}
+    "HomeWork": {"postal_code": "9250000"},  # Maipú
+    "PresentialWork": {"postal_code": "7550000"}  # Las Condes
 }
 
 CHILE_HOLIDAYS_2025 = [
@@ -127,12 +131,75 @@ CHILE_HOLIDAYS_2025 = [
 ]
 
 
+def get_location_info(postal_code: str) -> dict:
+    """Get location coordinates and comuna from postal code using Google Maps API"""
+    try:
+        gmaps = googlemaps.Client(key=os.getenv('GOOGLE_MAPS_API_KEY'))
+
+        # Search with postal code and city for better results
+        query = f"{postal_code}, Santiago, Chile"
+        result = gmaps.geocode(query, region='cl')
+
+        if result:
+            location = result[0]
+
+            # Extract comuna from address components
+            comuna = None
+            for component in location['address_components']:
+                if 'sublocality' in component['types']:
+                    comuna = component['long_name']
+                    break
+
+            # Normalize comuna names
+            if comuna:
+                if comuna.lower() == 'maipu':
+                    comuna = 'Maipú'
+                elif comuna.lower() == 'las condes':
+                    comuna = 'Las Condes'
+
+            # If no comuna found, use known values
+            if not comuna:
+                comuna = 'Maipú' if postal_code == '9250000' else 'Las Condes'
+
+            coordinates = location['geometry']['location']
+
+            logging.info(
+                f"Ubicación encontrada para código postal {postal_code}")
+            logging.info(f"Comuna identificada: {comuna}")
+            logging.info(
+                f"Coordenadas: {coordinates['lat']}, {coordinates['lng']}")
+
+            return {
+                "latitude": str(coordinates['lat']),
+                "longitude": str(coordinates['lng']),
+                "comuna": comuna
+            }
+
+        logging.error(
+            f"No se encontró ubicación para código postal: {postal_code}")
+        return None
+
+    except Exception as e:
+        logging.error(f"Error al obtener ubicación: {str(e)}")
+        return None
+
+
 def get_location_for_day():
     day = datetime.now().weekday()
-    if day in [0, 3]:  # Lunes y Jueves
-        return LOCATIONS["HomeWork"]
-    elif day in [1, 2, 4]:  # Martes, Miércoles y Viernes
-        return LOCATIONS["PresentialWork"]
+    # Fix: Changed the logic to match the correct days
+    location_type = "PresentialWork" if day in [
+        0, 3] else "HomeWork" if day in [1, 2, 4] else None
+
+    if not location_type:
+        return None
+
+    postal_code = LOCATIONS[location_type]["postal_code"]
+    location_info = get_location_info(postal_code)
+
+    if location_info:
+        logging.info(
+            f"Ubicación encontrada para {location_type}: {location_info['comuna']}")
+        return location_info
     return None
 
 
@@ -283,12 +350,18 @@ def process_rut(rut: str) -> None:
 
         action_type = "ENTRADA" if chile_hour < 12 else "SALIDA"
 
+        location_info = get_location_for_day()
+        if not location_info:
+            raise Exception("No se pudo obtener información de ubicación")
+
+        # Fix: Changed the logic to match the correct days
+        current_location = "WORK" if datetime.now().weekday() in [
+            0, 3] else "HOME"
+        comuna = location_info.get('comuna', 'Comuna desconocida')
+
         print(f"🕐 Hora UTC: {utc_now.strftime('%H:%M:%S')}")
         print(f"🇨🇱 Hora Chile (estimada): {chile_time.strftime('%H:%M:%S')}")
-        print(f"📍 Tipo de marcaje: {action_type}")
-
-        current_location = "HOME" if get_location_for_day(
-        ) == LOCATIONS["HomeWork"] else "WORK"
+        print(f"📍 Tipo de marcaje: {action_type} en {comuna}")  # Added comuna
 
         if not DEBUG_MODE:
             logging.info("Iniciando navegador en modo headless.")
@@ -349,7 +422,7 @@ def process_rut(rut: str) -> None:
         email = EmailMessage()
         email["From"] = EMAIL_FROM
         email["To"] = EMAIL_TO
-        email["Subject"] = f"{action_type} ({current_location}) {'(simulada)' if DEBUG_MODE else ''} completada"
+        email["Subject"] = f"{action_type} ({current_location} - {comuna}) {'(simulada)' if DEBUG_MODE else ''} completada"
         email.set_content(mensaje)
 
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as smtp:
