@@ -4,12 +4,15 @@ on:
   schedule:
     - cron: "10 12 * * 1-5" # 08:10 CLT (Lunes a Viernes)
     - cron: "30 21 * * 1-5" # 17:30 CLT (Lunes a Viernes)
-  workflow_dispatch: # Permite ejecutarlo manualmente desde GitHub UI
+  workflow_dispatch:
 
 jobs:
   marcar-turno:
     runs-on: ubuntu-latest
     env:
+      CLOCK_IN_ACTIVE: ${{ secrets.CLOCK_IN_ACTIVE }}
+      DEBUG_MODE: ${{ secrets.DEBUG_MODE }}
+      EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
       EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
 
     steps:

@@ -15,11 +15,10 @@ Thumbs.db
 # Archivos de Python
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
+*$py.class
+venv/
 
 # Entornos virtuales
-venv/
 env/
 .venv/
 .venv
@@ -30,7 +29,7 @@ env/
 *.swp
 
 # Chromedriver o binarios que puedas usar localmente
-chromedriver
+chromedriver*
 chromedriver.exe
 
 # Archivos de compilación u objetos temporales
