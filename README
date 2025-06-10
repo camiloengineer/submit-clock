@@ -1,0 +1,11 @@
+# Descripción
+
+Script simple para pruebas de programación. Incompleto y con errores.
+
+## Configuración
+
+```bash
+pip install -r requirements.txt
+```
+
+_No mantenido, solo para propósitos de prueba_
