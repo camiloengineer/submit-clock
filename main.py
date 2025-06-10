@@ -15,6 +15,9 @@ from email.message import EmailMessage
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import List
 
 # Disable only the single InsecureRequestWarning from urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -252,19 +255,25 @@ def is_clock_in_active():
         return None
 
 
-def main():
-    rut = is_clock_in_active()
-    if not rut:
-        logging.info("No hay RUT activo en los feature flags")
-        return
-
-    # RETARDO ALEATORIO DE 1 A 20 MINUTOS (1 MINUTO EN DEBUG)
-    delay_min = 1 if DEBUG_MODE else random.randint(1, 20)
-    logging.info(f"Esperando {delay_min} minutos antes de ejecutar el script.")
-    print(f"⏳ Esperando {delay_min} minutos antes de iniciar marcaje...")
-    sleep(delay_min * 60)
-
+def process_rut(rut: str) -> None:
+    """Process a single RUT in its own thread"""
     try:
+        logging.info(f"🧵 Iniciando proceso para RUT: {rut}")
+
+        # Create context for this specific RUT
+        context = Context.builder(rut).name(rut).build()
+
+        # Check if RUT is active
+        if not ldclient.get().variation(rut, context, False):
+            logging.warning(f"RUT {rut} está desactivado")
+            return
+
+        # Run the main logic for this RUT
+        if is_holiday():
+            logging.info(
+                f"Hoy es feriado - no se ejecuta marcaje para RUT {rut}")
+            return
+
         # OBTENER HORA UTC Y CONVERTIR A CHILE
         utc_now = datetime.utcnow()
         chile_hour = (utc_now.hour - 4) % 24
@@ -376,6 +385,27 @@ def main():
             logging.info("Navegador cerrado.")
 
 
+def get_active_ruts() -> List[str]:
+    """Get all valid RUTs from LaunchDarkly flags"""
+    active_ruts = []
+    try:
+        context = Context.builder("default").name("default").build()
+        all_flags = ldclient.get().all_flags_state(context)
+
+        if all_flags.valid:
+            flags_dict = all_flags.to_json_dict()
+            for flag_key in flags_dict:
+                if not flag_key.startswith('$') and flag_key != 'CLOCK_IN_ACTIVE':
+                    if is_valid_rut(flag_key):
+                        active_ruts.append(flag_key)
+                        logging.info(f"RUT válido encontrado: {flag_key}")
+
+        return active_ruts
+    except Exception as e:
+        logging.error(f"Error obteniendo RUTs: {str(e)}")
+        return []
+
+
 # Verificar si debemos ejecutar el script
 if __name__ == "__main__":
     if not CLOCK_IN_ACTIVE:
@@ -387,4 +417,24 @@ if __name__ == "__main__":
         logging.info("Hoy es feriado, no se ejecutará el marcaje")
         exit()
 
-    main()
+    ruts = get_active_ruts()
+    if not ruts:
+        logging.warning("No se encontraron RUTs válidos")
+    else:
+        logging.info(f"Procesando {len(ruts)} RUTs en paralelo")
+
+        # Process RUTs in parallel using ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(len(ruts), 5)) as executor:
+            # Submit all RUTs for processing
+            future_to_rut = {executor.submit(
+                process_rut, rut): rut for rut in ruts}
+
+            # Wait for all threads to complete
+            for future in as_completed(future_to_rut):
+                rut = future_to_rut[future]
+                try:
+                    future.result()  # This will raise any exceptions from the thread
+                except Exception as e:
+                    logging.error(f"Thread para RUT {rut} falló: {str(e)}")
+
+        logging.info("✅ Procesamiento de todos los RUTs completado")
