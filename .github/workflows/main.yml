@@ -16,6 +16,8 @@ jobs:
       DEBUG_MODE: ${{ secrets.DEBUG_MODE }}
       EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
       EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+      LAUNCHDARKLY_SDK_KEY: ${{ secrets.LAUNCHDARKLY_SDK_KEY }}
+      USER_RUT: ${{ secrets.USER_RUT }}
 
     steps:
       - name: Checkout del repositorio
