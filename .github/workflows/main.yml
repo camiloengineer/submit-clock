@@ -48,6 +48,7 @@ jobs:
         env:
           PYTHONUNBUFFERED: 1
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
 
       - name: Listar archivos de log
         if: always()

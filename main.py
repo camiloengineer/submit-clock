@@ -18,8 +18,6 @@ from selenium.webdriver.common.by import By
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List
-from geopy.geocoders import Nominatim
-from geopy.exc import GeocoderTimedOut
 import googlemaps
 
 # Disable only the single InsecureRequestWarning from urllib3
@@ -134,10 +132,17 @@ CHILE_HOLIDAYS_2025 = [
 def get_location_info(postal_code: str) -> dict:
     """Get location coordinates and comuna from postal code using Google Maps API"""
     try:
+        logging.info(f"Obteniendo ubicación para código postal: {postal_code}")
         gmaps = googlemaps.Client(key=os.getenv('GOOGLE_MAPS_API_KEY'))
+
+        if not os.getenv('GOOGLE_MAPS_API_KEY'):
+            logging.error("GOOGLE_MAPS_API_KEY no está configurada")
+            return None
 
         # Search with postal code and city for better results
         query = f"{postal_code}, Santiago, Chile"
+        logging.info(f"Consultando Google Maps API con query: {query}")
+
         result = gmaps.geocode(query, region='cl')
 
         if result:
