@@ -56,6 +56,21 @@ LOCATIONS = {
     "PresentialWork": {"latitude": "-33.5169", "longitude": "-70.7571"}
 }
 
+CHILE_HOLIDAYS_2025 = [
+    {"date": "2025-01-01", "title": "Año Nuevo", "type": "Civil"},
+    {"date": "2025-04-18", "title": "Viernes Santo", "type": "Religioso"},
+    {"date": "2025-04-19", "title": "Sábado Santo", "type": "Religioso"},
+    {"date": "2025-05-01", "title": "Día Nacional del Trabajo", "type": "Civil"},
+    {"date": "2025-05-21", "title": "Día de las Glorias Navales", "type": "Civil"},
+    {"date": "2025-06-29", "title": "San Pedro y San Pablo", "type": "Religioso"},
+    {"date": "2025-07-16", "title": "Día de la Virgen del Carmen", "type": "Religioso"},
+    {"date": "2025-08-15", "title": "Asunción de la Virgen", "type": "Religioso"},
+    {"date": "2025-09-18", "title": "Independencia Nacional", "type": "Civil"},
+    {"date": "2025-09-19", "title": "Día de las Glorias del Ejército", "type": "Civil"},
+    {"date": "2025-12-08", "title": "Inmaculada Concepción", "type": "Religioso"},
+    {"date": "2025-12-25", "title": "Navidad", "type": "Religioso"}
+]
+
 # Función para obtener ubicación según día
 
 
@@ -76,7 +91,7 @@ def is_holiday():
             'accept': 'application/json'
         }
         response = requests.get(
-            'https://api.boostr.cl/holidays.json', headers=headers)
+            'https://api.boostr.cl/holidays.json', headers=headers, timeout=5)
 
         if response.status_code == 200:
             result = response.json()
@@ -89,7 +104,7 @@ def is_holiday():
                     (h for h in holidays if h['date'] == today), None)
                 if holiday:
                     logging.info(
-                        f"Hoy es feriado: {holiday['title']} ({holiday['type']})")
+                        f"Hoy es feriado (API): {holiday['title']} ({holiday['type']})")
 
                     # Send holiday email notification with emoji
                     email = EmailMessage()
@@ -111,14 +126,47 @@ def is_holiday():
 
                     return True
 
-        else:
-            logging.warning(
-                f"API de feriados retornó status code: {response.status_code}")
+        raise Exception(f"API retornó status code: {response.status_code}")
 
-    except requests.exceptions.RequestException as e:
-        logging.warning(f"No se pudo verificar feriados: {str(e)}")
+    except Exception as e:
+        logging.warning(f"API de feriados no disponible: {str(e)}")
+        logging.info("Utilizando lista de feriados local...")
+
+        # Fallback to local holidays
+        today = date.today().strftime("%Y-%m-%d")
+        holiday = next(
+            (h for h in CHILE_HOLIDAYS_2025 if h['date'] == today), None)
+
+        if holiday:
+            logging.info(
+                f"Hoy es feriado (LOCAL): {holiday['title']} ({holiday['type']})")
+            send_holiday_email(holiday, "LOCAL")
+            return True
 
     return False
+
+
+def send_holiday_email(holiday, source):
+    try:
+        email = EmailMessage()
+        email["From"] = EMAIL_FROM
+        email["To"] = EMAIL_TO
+        email["Subject"] = f"🎉 Feriado: {holiday['title']} - No hay marcaje"
+
+        content = f"""Hoy es feriado ({holiday['title']}), no se realizará marcaje.
+Tipo: {holiday['type']}
+Fuente: {'API en línea' if source == 'API' else 'Lista local (API no disponible)'}"""
+
+        email.set_content(content)
+
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as smtp:
+            smtp.starttls()
+            smtp.login(EMAIL_FROM, EMAIL_PASS)
+            smtp.send_message(email)
+        logging.info(f"Correo de feriado enviado (fuente: {source})")
+    except Exception as mail_error:
+        logging.error(
+            f"No se pudo enviar correo de feriado: {str(mail_error)}")
 
 
 def main():
