@@ -71,22 +71,53 @@ def get_location_for_day():
 
 
 def is_holiday():
-    year = datetime.now().year
     try:
-        # Create a custom session that won't verify SSL certificates
-        session = requests.Session()
-        session.verify = False
+        headers = {
+            'accept': 'application/json'
+        }
+        response = requests.get(
+            'https://api.boostr.cl/holidays.json', headers=headers)
 
-        response = session.get(
-            f"https://apis.digital.gob.cl/fl/feriados/{year}")
         if response.status_code == 200:
-            holidays = response.json()
-            today = date.today().strftime("%Y-%m-%d")
-            return any(holiday["fecha"] == today for holiday in holidays)
+            result = response.json()
+            if result['status'] == 'success':
+                today = date.today().strftime("%Y-%m-%d")
+                holidays = result['data']
+
+                # Check if today is a holiday
+                holiday = next(
+                    (h for h in holidays if h['date'] == today), None)
+                if holiday:
+                    logging.info(
+                        f"Hoy es feriado: {holiday['title']} ({holiday['type']})")
+
+                    # Send holiday email notification with emoji
+                    email = EmailMessage()
+                    email["From"] = EMAIL_FROM
+                    email["To"] = EMAIL_TO
+                    email["Subject"] = f"🎉 Feriado: {holiday['title']} - No hay marcaje"
+                    email.set_content(
+                        f"Hoy es feriado ({holiday['title']}), no se realizará marcaje.\nTipo: {holiday['type']}\nExtra: {holiday['extra']}")
+
+                    try:
+                        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as smtp:
+                            smtp.starttls()
+                            smtp.login(EMAIL_FROM, EMAIL_PASS)
+                            smtp.send_message(email)
+                        logging.info("Correo de feriado enviado.")
+                    except Exception as mail_error:
+                        logging.error(
+                            f"No se pudo enviar correo de feriado: {str(mail_error)}")
+
+                    return True
+
+        else:
+            logging.warning(
+                f"API de feriados retornó status code: {response.status_code}")
+
     except requests.exceptions.RequestException as e:
         logging.warning(f"No se pudo verificar feriados: {str(e)}")
-        # Si hay error, asumimos que no es feriado para continuar con el marcaje
-        return False
+
     return False
 
 
