@@ -519,6 +519,13 @@ def get_active_ruts() -> List[Dict[str, str]]:
         return []
 
 
+def get_random_delay() -> int:
+    """Genera un delay aleatorio entre 1 y 20 minutos"""
+    delay_minutes = random.randint(1, 20)
+    logging.info(f"⏰ Delay aleatorio generado: {delay_minutes} minutos")
+    return delay_minutes
+
+
 # Verificar si debemos ejecutar el script
 if __name__ == "__main__":
     print("🚀 Iniciando script de marcaje...")
@@ -530,6 +537,12 @@ if __name__ == "__main__":
     if is_holiday():
         logging.info("Hoy es feriado, no se ejecutará el marcaje")
         exit()
+
+    # Agregar delay aleatorio antes de procesar
+    delay_minutes = get_random_delay()
+    print(
+        f"⏰ Esperando {delay_minutes} minutos para simular comportamiento humano...")
+    sleep(delay_minutes * 60)  # Convertir minutos a segundos
 
     ruts = get_active_ruts()
 
