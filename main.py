@@ -396,14 +396,20 @@ def process_rut(rut: str) -> None:
             print(f"🔢 Ingresando RUT: {rut[:4]}****")
             for char in rut:
                 found = False
-                for el in driver.find_elements(By.CSS_SELECTOR, "li.digits"):
-                    if el.text.strip().upper() == char:
+                print(f"🔍 Buscando carácter: {char}")  # Debug
+                buttons = driver.find_elements(By.CSS_SELECTOR, "li.digits")
+                # Debug
+                print(
+                    f"📱 Botones disponibles: {[el.text.strip() for el in buttons]}")
+                for el in buttons:
+                    if el.text.strip().upper() == char.upper():  # Comparación case-insensitive
                         el.click()
                         found = True
-                        logging.info(f"Click en carácter de RUT")
+                        logging.info(f"Click en carácter: {char}")
                         break
                 if not found:
-                    raise Exception(f"❌ No se encontró el carácter: {char}")
+                    raise Exception(
+                        f"❌ No se encontró el carácter: {char} (disponibles: {[el.text.strip() for el in buttons]})")
                 sleep(0.3)
 
             sleep(1)
