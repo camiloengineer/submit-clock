@@ -331,6 +331,38 @@ def process_rut(rut_info: Dict[str, str]) -> None:
         rut = rut_info['rut']
         postal_code = rut_info['postal_code']
 
+        # Get location info first
+        location_info = get_location_info(postal_code)
+        if not location_info:
+            raise Exception(
+                f"No se pudo obtener información para el código postal {postal_code}")
+
+        latitude = float(location_info['latitude'])
+        longitude = float(location_info['longitude'])
+
+        # Configure Chrome options with geolocation
+        options = Options()
+        options.add_argument("--headless")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--window-size=1920,1080")
+
+        # Add geolocation override
+        options.add_argument(f"--use-fake-ui-for-media-stream")
+        options.add_argument(f"--use-fake-device-for-media-stream")
+
+        # Create Chrome driver with location capabilities
+        driver = webdriver.Chrome(options=options)
+
+        # Set geolocation using CDP
+        params = {
+            "latitude": latitude,
+            "longitude": longitude,
+            "accuracy": 100
+        }
+        driver.execute_cdp_cmd("Emulation.setGeolocationOverride", params)
+
         # Get Chile time
         chile_tz = timezone(timedelta(hours=-4))
         chile_time = datetime.now(chile_tz)
