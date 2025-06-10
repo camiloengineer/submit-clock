@@ -4,6 +4,8 @@ on:
   schedule:
     - cron: "10 12 * * 1-5" # 08:10 CLT (Lunes a Viernes)
     - cron: "30 21 * * 1-5" # 17:30 CLT (Lunes a Viernes)
+  push:
+    branches: ["main"] # Se activará con commits en la rama main
   workflow_dispatch:
 
 jobs:
