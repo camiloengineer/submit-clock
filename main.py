@@ -5,6 +5,7 @@ import logging
 import requests
 import urllib3
 import ldclient
+import threading
 from datetime import datetime, date
 from dotenv import load_dotenv
 from ldclient import Context
@@ -16,6 +17,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from typing import List
 from datetime import datetime, timezone, timedelta
+from concurrent.futures import ThreadPoolExecutor
 
 # Disable only the single InsecureRequestWarning from urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -222,29 +224,48 @@ def is_valid_rut(rut):
 
 
 def process_rut(rut: str) -> None:
+    current_thread = threading.current_thread()
+
     # Capturar logs para el email
     log_messages = []
 
     try:
         log_messages.append(f"🚀 Iniciando procesamiento RUT: {rut[:4]}****")
 
+        # DELAY ALEATORIO POR CADA RUT (solo en modo producción)
+        if not DEBUG_MODE:
+            delay_minutes = get_random_delay()
+            print(
+                f"⏰ [Hilo {current_thread.name}] Aplicando delay aleatorio para RUT {rut[:4]}****: {delay_minutes} minutos")
+            print(
+                f"⏳ [Hilo {current_thread.name}] Esperando para simular comportamiento humano...")
+            logging.info(
+                f"Aplicando delay de {delay_minutes} minutos para RUT {rut[:4]}****")
+            sleep(delay_minutes * 60)  # Convertir minutos a segundos
+            print(
+                f"✅ [Hilo {current_thread.name}] Delay completado para RUT {rut[:4]}****, continuando...")
+        else:
+            print(
+                f"🔄 [Hilo {current_thread.name}] Modo DEBUG activo: sin delay para RUT {rut[:4]}****")
+
         # Get Chile time
         chile_tz = timezone(timedelta(hours=-4))
         chile_time = datetime.now(chile_tz)
 
-        print(f"🕐 Hora Chile: {chile_time.strftime('%H:%M:%S')}")
-        print(f"📍 Ubicación: Sin coordenadas")
+        print(
+            f"🕐 [Hilo {current_thread.name}] Hora Chile: {chile_time.strftime('%H:%M:%S')}")
+        print(f"📍 [Hilo {current_thread.name}] Ubicación: Sin coordenadas")
 
         # Determine action type
         action_type = "ENTRADA" if 5 <= chile_time.hour < 12 else "SALIDA"
-        print(f"🔍 Tipo de marcaje: {action_type}")
+        print(f"🔍 [Hilo {current_thread.name}] Tipo de marcaje: {action_type}")
 
         if DEBUG_MODE:
             log_messages.append("🧪 Modo DEBUG activo - simulando marcaje")
             mensaje = f"🧪 DEBUG activo: no se ejecutó marcaje. Hora Chile: {chile_time.strftime('%H:%M:%S')}"
         else:
             log_messages.append("⚡ Iniciando marcaje real...")
-            print(f"⚡ Iniciando marcaje real...")
+            print(f"⚡ [Hilo {current_thread.name}] Iniciando marcaje real...")
 
             # Configure Chrome options - DESHABILITAR GEOLOCALIZACIÓN
             options = Options()
@@ -263,7 +284,8 @@ def process_rut(rut: str) -> None:
             }
             options.add_experimental_option("prefs", prefs)
 
-            print(f"🌐 Iniciando navegador sin geolocalización...")
+            print(
+                f"🌐 [Hilo {current_thread.name}] Iniciando navegador sin geolocalización...")
             driver = webdriver.Chrome(options=options)
 
             # JavaScript para anular geolocalización
@@ -274,28 +296,34 @@ def process_rut(rut: str) -> None:
                 navigator.geolocation.watchPosition = function() { return null; };
             """)
 
-            print(f"🌐 Cargando página de marcaje...")
+            print(
+                f"🌐 [Hilo {current_thread.name}] Cargando página de marcaje...")
             driver.get("https://app.ctrlit.cl/ctrl/dial/web/K1NBpBqyjf")
             driver.implicitly_wait(10)
             sleep(2)
 
-            print(f"🔘 Buscando botón {action_type}...")
+            print(
+                f"🔘 [Hilo {current_thread.name}] Buscando botón {action_type}...")
             boton = next((el for el in driver.find_elements(By.CSS_SELECTOR, 'button, div, span, li')
                          if el.text.strip().upper() == action_type), None)
             if not boton:
                 raise Exception(f"No se encontró botón {action_type}")
 
-            print(f"👆 Click en botón {action_type}")
+            print(
+                f"👆 [Hilo {current_thread.name}] Click en botón {action_type}")
             boton.click()
             sleep(2)
 
-            print(f"🔢 Ingresando RUT: {rut[:4]}****")
+            print(
+                f"🔢 [Hilo {current_thread.name}] Ingresando RUT: {rut[:4]}****")
             buttons = driver.find_elements(By.CSS_SELECTOR, "li.digits")
             available_buttons = [el.text.strip() for el in buttons]
-            print(f"📱 Botones disponibles: {available_buttons}")
+            print(
+                f"📱 [Hilo {current_thread.name}] Botones disponibles: {available_buttons}")
 
             for i, char in enumerate(rut):
-                print(f"🔤 Ingresando carácter {i+1}/{len(rut)}")
+                print(
+                    f"🔤 [Hilo {current_thread.name}] Ingresando carácter {i+1}/{len(rut)}")
                 found = False
                 for el in buttons:
                     if el.text.strip().upper() == char.upper():
@@ -308,7 +336,7 @@ def process_rut(rut: str) -> None:
 
             sleep(1)
 
-            print(f"📤 Enviando formulario...")
+            print(f"📤 [Hilo {current_thread.name}] Enviando formulario...")
             enviar = next((el for el in driver.find_elements(By.CSS_SELECTOR, 'li.pad-action.digits')
                           if el.text.strip().upper() == "ENVIAR"), None)
             if not enviar:
@@ -317,7 +345,7 @@ def process_rut(rut: str) -> None:
             sleep(1)
 
             driver.quit()
-            print(f"🌐 Navegador cerrado")
+            print(f"🌐 [Hilo {current_thread.name}] Navegador cerrado")
 
             # Crear mensaje con logs incluidos
             log_summary = "\n".join(log_messages[-10:])  # Últimos 10 logs
@@ -328,10 +356,12 @@ def process_rut(rut: str) -> None:
 📋 LOGS DEL PROCESO:
 {log_summary}"""
 
-        print(f"✅ Marcaje completado para RUT: {rut[:4]}****")
+        print(
+            f"✅ [Hilo {current_thread.name}] Marcaje completado para RUT: {rut[:4]}****")
 
         # Enviar correo de confirmación
-        print(f"📧 Enviando correo de confirmación...")
+        print(
+            f"📧 [Hilo {current_thread.name}] Enviando correo de confirmación...")
         email = EmailMessage()
         email["From"] = EMAIL_FROM
         email["To"] = EMAIL_TO
@@ -342,7 +372,7 @@ def process_rut(rut: str) -> None:
             smtp.starttls()
             smtp.login(EMAIL_FROM, EMAIL_PASS)
             smtp.send_message(email)
-        print(f"✅ Correo enviado exitosamente")
+        print(f"✅ [Hilo {current_thread.name}] Correo enviado exitosamente")
 
     except Exception as e:
         error_msg = f"""❌ Error en marcaje para RUT {rut[:4]}****:
@@ -354,7 +384,7 @@ def process_rut(rut: str) -> None:
         logging.error(error_msg)
 
         # Enviar correo de error
-        print(f"📧 Enviando correo de error...")
+        print(f"📧 [Hilo {current_thread.name}] Enviando correo de error...")
         email = EmailMessage()
         email["From"] = EMAIL_FROM
         email["To"] = EMAIL_TO
@@ -366,12 +396,14 @@ def process_rut(rut: str) -> None:
                 smtp.starttls()
                 smtp.login(EMAIL_FROM, EMAIL_PASS)
                 smtp.send_message(email)
-            print(f"✅ Correo de error enviado")
+            print(f"✅ [Hilo {current_thread.name}] Correo de error enviado")
         except Exception as mail_error:
-            print(f"❌ No se pudo enviar correo de error: {str(mail_error)}")
+            print(
+                f"❌ [Hilo {current_thread.name}] No se pudo enviar correo de error: {str(mail_error)}")
 
     finally:
-        print(f"🏁 Proceso finalizado para RUT: {rut[:4]}****")
+        print(
+            f"🏁 [Hilo {current_thread.name}] Proceso finalizado para RUT: {rut[:4]}****")
 
 
 def get_active_ruts() -> List[str]:
@@ -437,19 +469,7 @@ if __name__ == "__main__":
         print("🎄 Terminando ejecución - hoy es feriado")
         exit()
 
-    # Agregar delay aleatorio solo si no está en modo debug
-    if not DEBUG_MODE:
-        delay_minutes = 0  # get_random_delay()
-        print(f"⏰ Aplicando delay aleatorio: {delay_minutes} minutos")
-        print(f"⏳ Esperando para simular comportamiento humano...")
-        logging.info(
-            f"Aplicando delay de {delay_minutes} minutos en modo producción")
-        sleep(delay_minutes * 60)  # Convertir minutos a segundos
-        print("✅ Delay completado, continuando...")
-    else:
-        print("🔄 Modo DEBUG activo: ejecutando inmediatamente")
-        logging.info("Ejecutando en modo DEBUG: sin delay aleatorio")
-
+    # ELIMINAR EL DELAY GLOBAL - ahora cada RUT tendrá su propio delay
     print("🔍 Obteniendo lista de RUTs para procesar...")
     ruts = get_active_ruts()
 
@@ -461,14 +481,29 @@ if __name__ == "__main__":
         print(f"👥 INICIANDO PROCESAMIENTO DE {len(ruts)} RUTs")
         print("=" * 40)
 
-        # Procesar RUTs secuencialmente (sin hilos)
-        for i, rut in enumerate(ruts):
-            print(f"🚀 Procesando RUT {i+1}/{len(ruts)}: {rut[:4]}****")
-            try:
-                process_rut(rut)
-                print(f"✅ RUT {i+1}/{len(ruts)} completado exitosamente")
-            except Exception as e:
-                print(f"❌ Error en RUT {i+1}/{len(ruts)}: {str(e)}")
+        # USAR SOLO UNA OPCIÓN: HILOS (recomendado para múltiples RUTs con delays individuales)
+        with ThreadPoolExecutor(max_workers=min(len(ruts), 5)) as executor:
+            print(f"🧵 Usando {min(len(ruts), 5)} hilos paralelos")
+            futures = []
+
+            for i, rut in enumerate(ruts):
+                print(
+                    f"🚀 Enviando RUT {i+1}/{len(ruts)} al pool de hilos: {rut[:4]}****")
+                future = executor.submit(process_rut, rut)
+                futures.append((future, rut))
+
+            print("⏳ Esperando completación de todos los hilos...")
+            completed = 0
+            for future, rut in futures:
+                try:
+                    future.result()
+                    completed += 1
+                    print(
+                        f"✅ Completado {completed}/{len(futures)} - RUT: {rut[:4]}****")
+                except Exception as e:
+                    completed += 1
+                    print(
+                        f"❌ Error {completed}/{len(futures)} - RUT: {rut[:4]}****: {str(e)}")
 
         print("=" * 40)
         print("🎉 PROCESAMIENTO COMPLETADO")
