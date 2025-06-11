@@ -1,23 +1,20 @@
 import random
+import os
 import smtplib
 import logging
-import os
-from datetime import datetime, date
 import requests
-from dotenv import load_dotenv
 import urllib3
 import ldclient
+from datetime import datetime, date
+from dotenv import load_dotenv
 from ldclient import Context
 from ldclient.config import Config
-
 from time import sleep
 from email.message import EmailMessage
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Dict
+from typing import List
 from datetime import datetime, timezone, timedelta
 
 # Disable only the single InsecureRequestWarning from urllib3
@@ -38,7 +35,7 @@ log_filepath = os.path.join(logs_dir, log_filename)
 logging.basicConfig(
     filename=log_filepath,
     level=logging.INFO,
-    format="%(asctime)s-%(levelname)s-%(message)s",  # Removed spaces
+    format="%(asctime)s-%(levelname)s-%(message)s",
     force=True
 )
 
@@ -46,6 +43,9 @@ logging.info(f"Iniciando logging en archivo: {log_filepath}")
 
 # Load environment variables from .env file
 load_dotenv()
+print(f"🔍 DEBUG - Archivo .env cargado desde: {os.getcwd()}")
+print(f"🔍 DEBUG - DEBUG_MODE raw: '{os.getenv('DEBUG_MODE')}'")
+print(f"🔍 DEBUG - CLOCK_IN_ACTIVE raw: '{os.getenv('CLOCK_IN_ACTIVE')}'")
 
 # Get LaunchDarkly SDK key from environment
 ld_sdk_key = os.getenv('LAUNCHDARKLY_SDK_KEY')
@@ -66,7 +66,6 @@ logging.info(
 
 # Initialize LaunchDarkly client
 try:
-    # Configuración básica
     config = Config(
         sdk_key=ld_sdk_key,
         stream_uri="https://stream.launchdarkly.com",
@@ -75,10 +74,8 @@ try:
         offline=False
     )
 
-    # Inicializar cliente
     ldclient.set_config(config)
 
-    # Verificar inicialización
     if ldclient.get().is_initialized():
         logging.info("✅ LaunchDarkly client inicializado correctamente")
     else:
@@ -98,6 +95,13 @@ email_pass = os.getenv('EMAIL_PASS')
 # VARIABLES DE ENTORNO Y VALIDACIONES INICIALES
 DEBUG_MODE = debug_mode.lower() == "true" if debug_mode else False
 CLOCK_IN_ACTIVE = clock_in_active.lower() == "true" if clock_in_active else False
+
+# Agregar debug para verificar valores
+print(f"🔍 DEBUG - Variable debug_mode cargada: '{debug_mode}'")
+print(f"🔍 DEBUG - Variable DEBUG_MODE calculada: {DEBUG_MODE}")
+print(f"🔍 DEBUG - Variable clock_in_active cargada: '{clock_in_active}'")
+print(f"🔍 DEBUG - Variable CLOCK_IN_ACTIVE calculada: {CLOCK_IN_ACTIVE}")
+
 EMAIL = email_address
 EMAIL_PASS = email_pass
 
@@ -106,17 +110,6 @@ EMAIL_FROM = EMAIL
 EMAIL_TO = EMAIL
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
-
-# CÓDIGOS POSTALES POR UBICACIÓN
-LOCATIONS = {
-    "PresentialWork": {
-        # Código postal para trabajo presencial (ej: Santiago centro)
-        "postal_code": "7500000"
-    },
-    "HomeWork": {
-        "postal_code": "9250000"  # Código postal para trabajo remoto
-    }
-}
 
 CHILE_HOLIDAYS_2025 = [
     {"date": "2025-01-01", "title": "Año Nuevo", "type": "Civil"},
@@ -132,57 +125,6 @@ CHILE_HOLIDAYS_2025 = [
     {"date": "2025-12-08", "title": "Inmaculada Concepción", "type": "Religioso"},
     {"date": "2025-12-25", "title": "Navidad", "type": "Religioso"}
 ]
-
-
-def get_location_info(postal_code: str) -> dict:
-    """Mapeo simple de códigos postales sin usar Google Maps API"""
-    print(f"📍 Obteniendo ubicación para código postal: {postal_code}")
-
-    # Mapeo simple basado en los códigos postales conocidos
-    location_map = {
-        "7500000": {  # Santiago centro
-            "latitude": "-33.4489",
-            "longitude": "-70.6693",
-            "comuna": "Santiago"
-        },
-        "9250000": {  # Maipú
-            "latitude": "-33.4821",
-            "longitude": "-70.7514",
-            "comuna": "Maipú"
-        }
-    }
-
-    if postal_code in location_map:
-        location_info = location_map[postal_code]
-        print(f"✅ Ubicación encontrada: {location_info['comuna']}")
-        return location_info
-    else:
-        print(
-            f"⚠️ Código postal no reconocido, usando ubicación por defecto: {postal_code}")
-        return {
-            "latitude": "-33.4489",
-            "longitude": "-70.6693",
-            "comuna": "Santiago"
-        }
-
-
-def get_location_for_day():
-    day = datetime.now().weekday()
-    # Fix: Changed the logic to match the correct days
-    location_type = "PresentialWork" if day in [
-        0, 3] else "HomeWork" if day in [1, 2, 4] else None
-
-    if not location_type:
-        return None
-
-    postal_code = LOCATIONS[location_type]["postal_code"]
-    location_info = get_location_info(postal_code)
-
-    if location_info:
-        logging.info(
-            f"Ubicación encontrada para {location_type}: {location_info['comuna']}")
-        return location_info
-    return None
 
 
 def is_holiday():
@@ -219,7 +161,6 @@ def is_holiday():
     except Exception as e:
         print(f"⚠️ API de feriados no disponible: {str(e)}")
         print("📋 Verificando con lista local de feriados...")
-        # ...existing code...
 
         today = date.today().strftime("%Y-%m-%d")
         holiday = next(
@@ -280,120 +221,81 @@ def is_valid_rut(rut):
         return False
 
 
-def is_clock_in_active():
-    context = Context.builder("default").name("default").build()
-
-    try:
-        all_flags = ldclient.get().all_flags_state(context)
-
-        if all_flags.valid:
-            flags_dict = all_flags.to_json_dict()
-            for flag_key in flags_dict:
-                # Ignorar flags del sistema y otros flags conocidos
-                if flag_key.startswith('$') or flag_key == 'CLOCK_IN_ACTIVE':
-                    logging.info(f"Flag del sistema encontrado: {flag_key}")
-                    continue
-
-                # Validar si es un RUT
-                if is_valid_rut(flag_key):
-                    status = "activo" if flags_dict[flag_key] else "desactivado"
-                    logging.info(
-                        f"RUT válido encontrado: {flag_key} ({status})")
-                    if flags_dict[flag_key]:
-                        return flag_key
-                else:
-                    logging.warning(f"Flag no válido como RUT: {flag_key}")
-
-            logging.warning("No se encontraron RUTs válidos activos")
-            return None
-
-    except Exception as e:
-        logging.error(f"Error al obtener flags: {str(e)}")
-        return None
-
-
-def process_rut(rut_info: Dict[str, str]) -> None:
-    current_thread = threading.current_thread()
-    rut = rut_info['rut']
-    postal_code = rut_info['postal_code']
-
+def process_rut(rut: str) -> None:
     # Capturar logs para el email
     log_messages = []
 
     try:
         log_messages.append(f"🚀 Iniciando procesamiento RUT: {rut[:4]}****")
-        # Get location info (now simplified)
-        print(f"📍 [Hilo {current_thread.name}] Obteniendo ubicación...")
-        location_info = get_location_info(postal_code)
-
-        # No need to check if location_info is None since we always return a default
-        latitude = float(location_info['latitude'])
-        longitude = float(location_info['longitude'])
 
         # Get Chile time
         chile_tz = timezone(timedelta(hours=-4))
         chile_time = datetime.now(chile_tz)
 
-        print(
-            f"🕐 [Hilo {current_thread.name}] Hora Chile: {chile_time.strftime('%H:%M:%S')}")
-
-        location_type = "PresentialWork" if postal_code == LOCATIONS[
-            "PresentialWork"]["postal_code"] else "HomeWork"
-        comuna = location_info.get('comuna', 'Santiago')
-
-        print(
-            f"📍 [Hilo {current_thread.name}] Ubicación: {comuna} ({location_type})")
+        print(f"🕐 Hora Chile: {chile_time.strftime('%H:%M:%S')}")
+        print(f"📍 Ubicación: Sin coordenadas")
 
         # Determine action type
         action_type = "ENTRADA" if 5 <= chile_time.hour < 12 else "SALIDA"
-        print(f"🔍 [Hilo {current_thread.name}] Tipo de marcaje: {action_type}")
+        print(f"🔍 Tipo de marcaje: {action_type}")
 
         if DEBUG_MODE:
             log_messages.append("🧪 Modo DEBUG activo - simulando marcaje")
             mensaje = f"🧪 DEBUG activo: no se ejecutó marcaje. Hora Chile: {chile_time.strftime('%H:%M:%S')}"
         else:
             log_messages.append("⚡ Iniciando marcaje real...")
-            print(f"⚡ [Hilo {current_thread.name}] Iniciando marcaje real...")
+            print(f"⚡ Iniciando marcaje real...")
 
-            # Configure Chrome options (removed geolocation setup since it's not working correctly)
+            # Configure Chrome options - DESHABILITAR GEOLOCALIZACIÓN
             options = Options()
             options.add_argument("--headless")
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-dev-shm-usage")
             options.add_argument("--disable-gpu")
             options.add_argument("--window-size=1920,1080")
+            # DESHABILITAR GEOLOCALIZACIÓN
+            options.add_argument("--disable-geolocation")
+            options.add_argument("--disable-features=VizDisplayCompositor")
+            prefs = {
+                "profile.default_content_setting_values.geolocation": 2,
+                "profile.default_content_settings.popups": 0,
+                "profile.managed_default_content_settings.geolocation": 2
+            }
+            options.add_experimental_option("prefs", prefs)
 
-            print(f"🌐 [Hilo {current_thread.name}] Iniciando navegador...")
+            print(f"🌐 Iniciando navegador sin geolocalización...")
             driver = webdriver.Chrome(options=options)
 
-            print(
-                f"🌐 [Hilo {current_thread.name}] Cargando página de marcaje...")
+            # JavaScript para anular geolocalización
+            driver.execute_script("""
+                navigator.geolocation.getCurrentPosition = function(success, error) {
+                    if (error) error({ code: 1, message: 'User denied Geolocation' });
+                };
+                navigator.geolocation.watchPosition = function() { return null; };
+            """)
+
+            print(f"🌐 Cargando página de marcaje...")
             driver.get("https://app.ctrlit.cl/ctrl/dial/web/K1NBpBqyjf")
             driver.implicitly_wait(10)
             sleep(2)
 
-            print(
-                f"🔘 [Hilo {current_thread.name}] Buscando botón {action_type}...")
+            print(f"🔘 Buscando botón {action_type}...")
             boton = next((el for el in driver.find_elements(By.CSS_SELECTOR, 'button, div, span, li')
                          if el.text.strip().upper() == action_type), None)
             if not boton:
                 raise Exception(f"No se encontró botón {action_type}")
 
-            print(
-                f"👆 [Hilo {current_thread.name}] Click en botón {action_type}")
+            print(f"👆 Click en botón {action_type}")
             boton.click()
             sleep(2)
 
-            print(
-                f"🔢 [Hilo {current_thread.name}] Ingresando RUT: {rut[:4]}****")
+            print(f"🔢 Ingresando RUT: {rut[:4]}****")
             buttons = driver.find_elements(By.CSS_SELECTOR, "li.digits")
             available_buttons = [el.text.strip() for el in buttons]
-            print(
-                f"📱 [Hilo {current_thread.name}] Botones disponibles: {available_buttons}")
+            print(f"📱 Botones disponibles: {available_buttons}")
 
             for i, char in enumerate(rut):
-                print(
-                    f"🔤 [Hilo {current_thread.name}] Ingresando carácter {i+1}/{len(rut)}")
+                print(f"🔤 Ingresando carácter {i+1}/{len(rut)}")
                 found = False
                 for el in buttons:
                     if el.text.strip().upper() == char.upper():
@@ -406,7 +308,7 @@ def process_rut(rut_info: Dict[str, str]) -> None:
 
             sleep(1)
 
-            print(f"📤 [Hilo {current_thread.name}] Enviando formulario...")
+            print(f"📤 Enviando formulario...")
             enviar = next((el for el in driver.find_elements(By.CSS_SELECTOR, 'li.pad-action.digits')
                           if el.text.strip().upper() == "ENVIAR"), None)
             if not enviar:
@@ -415,32 +317,32 @@ def process_rut(rut_info: Dict[str, str]) -> None:
             sleep(1)
 
             driver.quit()
-            print(f"🌐 [Hilo {current_thread.name}] Navegador cerrado")
+            print(f"🌐 Navegador cerrado")
 
             # Crear mensaje con logs incluidos
             log_summary = "\n".join(log_messages[-10:])  # Últimos 10 logs
             mensaje = f"""✅ {action_type} realizada con éxito a las {chile_time.strftime('%H:%M:%S')} (Chile).
+📍 Geolocalización: Sin coordenadas
+📍 Ubicación: Sin dirección
 
 📋 LOGS DEL PROCESO:
 {log_summary}"""
 
-        print(
-            f"✅ [Hilo {current_thread.name}] Marcaje completado para RUT: {rut[:4]}****")
+        print(f"✅ Marcaje completado para RUT: {rut[:4]}****")
 
         # Enviar correo de confirmación
-        print(
-            f"📧 [Hilo {current_thread.name}] Enviando correo de confirmación...")
+        print(f"📧 Enviando correo de confirmación...")
         email = EmailMessage()
         email["From"] = EMAIL_FROM
         email["To"] = EMAIL_TO
-        email["Subject"] = f"{action_type} ({location_type} - {comuna}) {'(simulada)' if DEBUG_MODE else ''} completada"
+        email["Subject"] = f"{action_type} {'(simulada)' if DEBUG_MODE else ''} completada - RUT: {rut[:4]}****"
         email.set_content(mensaje)
 
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as smtp:
             smtp.starttls()
             smtp.login(EMAIL_FROM, EMAIL_PASS)
             smtp.send_message(email)
-        print(f"✅ [Hilo {current_thread.name}] Correo enviado exitosamente")
+        print(f"✅ Correo enviado exitosamente")
 
     except Exception as e:
         error_msg = f"""❌ Error en marcaje para RUT {rut[:4]}****:
@@ -452,11 +354,11 @@ def process_rut(rut_info: Dict[str, str]) -> None:
         logging.error(error_msg)
 
         # Enviar correo de error
-        print(f"📧 [Hilo {current_thread.name}] Enviando correo de error...")
+        print(f"📧 Enviando correo de error...")
         email = EmailMessage()
         email["From"] = EMAIL_FROM
         email["To"] = EMAIL_TO
-        email["Subject"] = f"Error en {action_type if 'action_type' in locals() else 'MARCAJE'} ({location_type if 'location_type' in locals() else 'N/A'})"
+        email["Subject"] = f"Error en {action_type if 'action_type' in locals() else 'MARCAJE'} - RUT: {rut[:4]}****"
         email.set_content(error_msg)
 
         try:
@@ -464,17 +366,15 @@ def process_rut(rut_info: Dict[str, str]) -> None:
                 smtp.starttls()
                 smtp.login(EMAIL_FROM, EMAIL_PASS)
                 smtp.send_message(email)
-            print(f"✅ [Hilo {current_thread.name}] Correo de error enviado")
+            print(f"✅ Correo de error enviado")
         except Exception as mail_error:
-            print(
-                f"❌ [Hilo {current_thread.name}] No se pudo enviar correo de error: {str(mail_error)}")
+            print(f"❌ No se pudo enviar correo de error: {str(mail_error)}")
 
     finally:
-        print(
-            f"🏁 [Hilo {current_thread.name}] Proceso finalizado para RUT: {rut[:4]}****")
+        print(f"🏁 Proceso finalizado para RUT: {rut[:4]}****")
 
 
-def get_active_ruts() -> List[Dict[str, str]]:
+def get_active_ruts() -> List[str]:
     """Get all valid RUTs from LaunchDarkly flags"""
     print("🏳️ Obteniendo RUTs activos desde LaunchDarkly...")
     active_ruts = []
@@ -490,20 +390,15 @@ def get_active_ruts() -> List[Dict[str, str]]:
 
             valid_ruts_count = 0
             for flag_key in flags_dict:
-                if not flag_key.startswith('$') and '_' in flag_key:
+                if not flag_key.startswith('$') and flag_key != 'CLOCK_IN_ACTIVE':
                     print(f"🔍 Analizando flag: {flag_key}")
-                    rut, postal_code = flag_key.lower().split('_')
-                    if is_valid_rut(rut):
-                        rut_info = {
-                            'rut': rut,
-                            'postal_code': postal_code
-                        }
-                        active_ruts.append(rut_info)
+                    if is_valid_rut(flag_key) and flags_dict[flag_key]:
+                        active_ruts.append(flag_key.lower())
                         valid_ruts_count += 1
                         print(
-                            f"✅ RUT válido #{valid_ruts_count}: {rut[:4]}**** (código postal: {postal_code})")
+                            f"✅ RUT válido #{valid_ruts_count}: {flag_key[:4]}****")
                     else:
-                        print(f"❌ RUT inválido en flag: {flag_key}")
+                        print(f"❌ RUT inválido o desactivado: {flag_key}")
 
             print(f"📋 Total de RUTs válidos encontrados: {len(active_ruts)}")
         else:
@@ -566,28 +461,14 @@ if __name__ == "__main__":
         print(f"👥 INICIANDO PROCESAMIENTO DE {len(ruts)} RUTs")
         print("=" * 40)
 
-        with ThreadPoolExecutor(max_workers=min(len(ruts), 5)) as executor:
-            print(f"🧵 Usando {min(len(ruts), 5)} hilos paralelos")
-            futures = []
-
-            for i, rut_info in enumerate(ruts):
-                print(
-                    f"🚀 Enviando RUT {i+1}/{len(ruts)} al pool de hilos: {rut_info['rut'][:4]}****")
-                future = executor.submit(process_rut, rut_info)
-                futures.append((future, rut_info))
-
-            print("⏳ Esperando completación de todos los hilos...")
-            completed = 0
-            for future, rut_info in futures:
-                try:
-                    future.result()
-                    completed += 1
-                    print(
-                        f"✅ Completado {completed}/{len(futures)} - RUT: {rut_info['rut'][:4]}****")
-                except Exception as e:
-                    completed += 1
-                    print(
-                        f"❌ Error {completed}/{len(futures)} - RUT: {rut_info['rut'][:4]}****: {str(e)}")
+        # Procesar RUTs secuencialmente (sin hilos)
+        for i, rut in enumerate(ruts):
+            print(f"🚀 Procesando RUT {i+1}/{len(ruts)}: {rut[:4]}****")
+            try:
+                process_rut(rut)
+                print(f"✅ RUT {i+1}/{len(ruts)} completado exitosamente")
+            except Exception as e:
+                print(f"❌ Error en RUT {i+1}/{len(ruts)}: {str(e)}")
 
         print("=" * 40)
         print("🎉 PROCESAMIENTO COMPLETADO")
