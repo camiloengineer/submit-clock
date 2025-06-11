@@ -19,7 +19,6 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict
 from datetime import datetime, timezone, timedelta
-import googlemaps
 
 # Disable only the single InsecureRequestWarning from urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -110,8 +109,13 @@ SMTP_PORT = 587
 
 # CÓDIGOS POSTALES POR UBICACIÓN
 LOCATIONS = {
-    # Only hardcode PresentialWork
-    "PresentialWork": {"postal_code": "7550000", "comuna": "Las Condes"}
+    "PresentialWork": {
+        # Código postal para trabajo presencial (ej: Santiago centro)
+        "postal_code": "7500000"
+    },
+    "HomeWork": {
+        "postal_code": "9250000"  # Código postal para trabajo remoto
+    }
 }
 
 CHILE_HOLIDAYS_2025 = [
@@ -131,61 +135,35 @@ CHILE_HOLIDAYS_2025 = [
 
 
 def get_location_info(postal_code: str) -> dict:
-    """Get location coordinates and comuna from postal code using Google Maps API"""
-    try:
-        logging.info(f"Obteniendo ubicación para código postal: {postal_code}")
-        gmaps = googlemaps.Client(key=os.getenv('GOOGLE_MAPS_API_KEY'))
+    """Mapeo simple de códigos postales sin usar Google Maps API"""
+    print(f"📍 Obteniendo ubicación para código postal: {postal_code}")
 
-        if not os.getenv('GOOGLE_MAPS_API_KEY'):
-            logging.error("GOOGLE_MAPS_API_KEY no está configurada")
-            return None
+    # Mapeo simple basado en los códigos postales conocidos
+    location_map = {
+        "7500000": {  # Santiago centro
+            "latitude": "-33.4489",
+            "longitude": "-70.6693",
+            "comuna": "Santiago"
+        },
+        "9250000": {  # Maipú
+            "latitude": "-33.4821",
+            "longitude": "-70.7514",
+            "comuna": "Maipú"
+        }
+    }
 
-        # First try with postal code and Región Metropolitana
-        query = f"{postal_code}, Región Metropolitana, Chile"
-        logging.info(f"Consultando Google Maps API con query: {query}")
-
-        result = gmaps.geocode(
-            query, region='cl', components={'country': 'CL'})
-
-        if result:
-            location = result[0]
-            coordinates = location['geometry']['location']
-            comuna = None
-
-            # Look for comuna in address components
-            for component in location['address_components']:
-                if 'sublocality_level_1' in component['types'] or 'locality' in component['types']:
-                    comuna = component['long_name']
-                    break
-
-            # If no comuna found, try reverse geocoding
-            if not comuna:
-                reverse_result = gmaps.reverse_geocode((coordinates['lat'], coordinates['lng']),
-                                                       language='es',
-                                                       result_type=['sublocality', 'locality'])
-                if reverse_result:
-                    for component in reverse_result[0]['address_components']:
-                        if 'sublocality_level_1' in component['types'] or 'locality' in component['types']:
-                            comuna = component['long_name']
-                            break
-
-            logging.info(
-                f"Ubicación encontrada para código postal {postal_code}")
-            logging.info(f"Comuna identificada: {comuna}")
-            logging.info(
-                f"Coordenadas: {coordinates['lat']}, {coordinates['lng']}")
-
-            return {
-                "latitude": str(coordinates['lat']),
-                "longitude": str(coordinates['lng']),
-                "comuna": comuna
-            }
-
-        return None
-
-    except Exception as e:
-        logging.error(f"Error al obtener ubicación: {str(e)}")
-        return None
+    if postal_code in location_map:
+        location_info = location_map[postal_code]
+        print(f"✅ Ubicación encontrada: {location_info['comuna']}")
+        return location_info
+    else:
+        print(
+            f"⚠️ Código postal no reconocido, usando ubicación por defecto: {postal_code}")
+        return {
+            "latitude": "-33.4489",
+            "longitude": "-70.6693",
+            "comuna": "Santiago"
+        }
 
 
 def get_location_for_day():
@@ -208,24 +186,30 @@ def get_location_for_day():
 
 
 def is_holiday():
+    print("🎄 Verificando si hoy es feriado...")
     try:
+        print("🌐 Consultando API de feriados online...")
         headers = {'accept': 'application/json'}
         response = requests.get(
             'https://api.boostr.cl/holidays.json', headers=headers, timeout=5)
 
         if response.status_code == 200:
+            print("✅ API de feriados respondió correctamente")
             result = response.json()
             if result['status'] == 'success':
                 holidays = result['data']
                 today = date.today().strftime("%Y-%m-%d")
+                print(f"📅 Verificando fecha: {today}")
 
                 holiday = next(
                     (h for h in holidays if h['date'] == today), None)
                 if holiday:
-                    logging.info(
-                        f"Hoy es feriado (API): {holiday['title']} ({holiday['type']})")
+                    print(
+                        f"🎉 ¡Hoy es feriado!: {holiday['title']} ({holiday['type']})")
                     send_holiday_email(holiday, "API")
                     return True
+                else:
+                    print("📅 No es feriado según API online")
             else:
                 raise Exception(
                     f"API retornó estado no exitoso: {result['status']}")
@@ -233,19 +217,21 @@ def is_holiday():
             raise Exception(f"API retornó status code: {response.status_code}")
 
     except Exception as e:
-        logging.warning(f"API de feriados no disponible: {str(e)}")
-        logging.info("Utilizando lista de feriados local...")
+        print(f"⚠️ API de feriados no disponible: {str(e)}")
+        print("📋 Verificando con lista local de feriados...")
+        # ...existing code...
 
         today = date.today().strftime("%Y-%m-%d")
         holiday = next(
             (h for h in CHILE_HOLIDAYS_2025 if h['date'] == today), None)
 
         if holiday:
-            logging.info(
-                f"Hoy es feriado (LOCAL): {holiday['title']} ({holiday['type']})")
+            print(
+                f"🎉 ¡Hoy es feriado! (lista local): {holiday['title']} ({holiday['type']})")
             send_holiday_email(holiday, "LOCAL")
             return True
 
+    print("✅ No es feriado, continuando con el marcaje")
     return False
 
 
@@ -327,72 +313,49 @@ def is_clock_in_active():
 
 
 def process_rut(rut_info: Dict[str, str]) -> None:
+    current_thread = threading.current_thread()
+    rut = rut_info['rut']
+    postal_code = rut_info['postal_code']
+
+    # Capturar logs para el email
+    log_messages = []
+
     try:
-        rut = rut_info['rut']
-        postal_code = rut_info['postal_code']
-
-        # Get location info first
+        log_messages.append(f"🚀 Iniciando procesamiento RUT: {rut[:4]}****")
+        # Get location info (now simplified)
+        print(f"📍 [Hilo {current_thread.name}] Obteniendo ubicación...")
         location_info = get_location_info(postal_code)
-        if not location_info:
-            raise Exception(
-                f"No se pudo obtener información para el código postal {postal_code}")
 
+        # No need to check if location_info is None since we always return a default
         latitude = float(location_info['latitude'])
         longitude = float(location_info['longitude'])
-
-        # Configure Chrome options with geolocation
-        options = Options()
-        options.add_argument("--headless")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--window-size=1920,1080")
-
-        # Add geolocation override
-        options.add_argument(f"--use-fake-ui-for-media-stream")
-        options.add_argument(f"--use-fake-device-for-media-stream")
-
-        # Create Chrome driver with location capabilities
-        driver = webdriver.Chrome(options=options)
-
-        # Set geolocation using CDP
-        params = {
-            "latitude": latitude,
-            "longitude": longitude,
-            "accuracy": 100
-        }
-        driver.execute_cdp_cmd("Emulation.setGeolocationOverride", params)
 
         # Get Chile time
         chile_tz = timezone(timedelta(hours=-4))
         chile_time = datetime.now(chile_tz)
 
-        print(f"🕐 Hora UTC: {datetime.now(timezone.utc).strftime('%H:%M:%S')}")
-        print(f"🇨🇱 Hora Chile: {chile_time.strftime('%H:%M:%S')}")
-
-        # Get location info
-        location_info = get_location_info(postal_code)
-        if not location_info:
-            raise Exception(
-                f"No se pudo obtener información para el código postal {postal_code}")
+        print(
+            f"🕐 [Hilo {current_thread.name}] Hora Chile: {chile_time.strftime('%H:%M:%S')}")
 
         location_type = "PresentialWork" if postal_code == LOCATIONS[
             "PresentialWork"]["postal_code"] else "HomeWork"
-        comuna = location_info.get('comuna', 'Comuna no encontrada')
+        comuna = location_info.get('comuna', 'Santiago')
 
-        print(f"📍 Ubicación: {comuna} ({location_type})")
+        print(
+            f"📍 [Hilo {current_thread.name}] Ubicación: {comuna} ({location_type})")
 
         # Determine action type
         action_type = "ENTRADA" if 5 <= chile_time.hour < 12 else "SALIDA"
-        print(f"🔍 Tipo de marcaje: {action_type}")
+        print(f"🔍 [Hilo {current_thread.name}] Tipo de marcaje: {action_type}")
 
         if DEBUG_MODE:
-            print(f"🧪 DEBUG activo: no se ejecutó marcaje")
+            log_messages.append("🧪 Modo DEBUG activo - simulando marcaje")
+            mensaje = f"🧪 DEBUG activo: no se ejecutó marcaje. Hora Chile: {chile_time.strftime('%H:%M:%S')}"
         else:
-            print(f"⌛ Ejecutando marcaje...")
+            log_messages.append("⚡ Iniciando marcaje real...")
+            print(f"⚡ [Hilo {current_thread.name}] Iniciando marcaje real...")
 
-        if not DEBUG_MODE:
-            logging.info("Iniciando navegador en modo headless.")
+            # Configure Chrome options (removed geolocation setup since it's not working correctly)
             options = Options()
             options.add_argument("--headless")
             options.add_argument("--no-sandbox")
@@ -400,58 +363,73 @@ def process_rut(rut_info: Dict[str, str]) -> None:
             options.add_argument("--disable-gpu")
             options.add_argument("--window-size=1920,1080")
 
+            print(f"🌐 [Hilo {current_thread.name}] Iniciando navegador...")
             driver = webdriver.Chrome(options=options)
-            logging.info("Cargando página de marcaje...")
+
+            print(
+                f"🌐 [Hilo {current_thread.name}] Cargando página de marcaje...")
             driver.get("https://app.ctrlit.cl/ctrl/dial/web/K1NBpBqyjf")
             driver.implicitly_wait(10)
             sleep(2)
 
-            logging.info(f"Tipo de marcaje: {action_type}")
-            print(f"🔍 Buscando botón {action_type}...")
+            print(
+                f"🔘 [Hilo {current_thread.name}] Buscando botón {action_type}...")
             boton = next((el for el in driver.find_elements(By.CSS_SELECTOR, 'button, div, span, li')
                          if el.text.strip().upper() == action_type), None)
             if not boton:
-                raise Exception(f"❌ No se encontró botón {action_type}")
+                raise Exception(f"No se encontró botón {action_type}")
+
+            print(
+                f"👆 [Hilo {current_thread.name}] Click en botón {action_type}")
             boton.click()
             sleep(2)
 
-            # Log parcial por seguridad
-            print(f"🔢 Ingresando RUT: {rut[:4]}****")
-            # Obtener los botones disponibles una sola vez
+            print(
+                f"🔢 [Hilo {current_thread.name}] Ingresando RUT: {rut[:4]}****")
             buttons = driver.find_elements(By.CSS_SELECTOR, "li.digits")
             available_buttons = [el.text.strip() for el in buttons]
-            print(f"📱 Botones disponibles: {available_buttons}")
+            print(
+                f"📱 [Hilo {current_thread.name}] Botones disponibles: {available_buttons}")
 
-            for char in rut:
+            for i, char in enumerate(rut):
+                print(
+                    f"🔤 [Hilo {current_thread.name}] Ingresando carácter {i+1}/{len(rut)}")
                 found = False
                 for el in buttons:
                     if el.text.strip().upper() == char.upper():
                         el.click()
                         found = True
-                        logging.info(f"Click en carácter: {char}")
                         break
                 if not found:
-                    raise Exception(f"❌ No se encontró el carácter: {char}")
+                    raise Exception(f"No se encontró el carácter: {char}")
                 sleep(0.3)
 
             sleep(1)
 
-            print("📤 Haciendo click en ENVIAR...")
+            print(f"📤 [Hilo {current_thread.name}] Enviando formulario...")
             enviar = next((el for el in driver.find_elements(By.CSS_SELECTOR, 'li.pad-action.digits')
                           if el.text.strip().upper() == "ENVIAR"), None)
             if not enviar:
-                raise Exception("❌ No se encontró botón ENVIAR")
+                raise Exception("No se encontró botón ENVIAR")
             enviar.click()
             sleep(1)
 
-            mensaje = f"✅ {action_type} realizada con éxito a las {chile_time.strftime('%H:%M:%S')} (Chile)."
-            logging.info(mensaje)
-        else:
-            mensaje = f"🧪 DEBUG activo: no se ejecutó marcaje. Hora Chile: {chile_time.strftime('%H:%M:%S')}"
-            logging.info(mensaje)
+            driver.quit()
+            print(f"🌐 [Hilo {current_thread.name}] Navegador cerrado")
+
+            # Crear mensaje con logs incluidos
+            log_summary = "\n".join(log_messages[-10:])  # Últimos 10 logs
+            mensaje = f"""✅ {action_type} realizada con éxito a las {chile_time.strftime('%H:%M:%S')} (Chile).
+
+📋 LOGS DEL PROCESO:
+{log_summary}"""
+
+        print(
+            f"✅ [Hilo {current_thread.name}] Marcaje completado para RUT: {rut[:4]}****")
 
         # Enviar correo de confirmación
-        print("📨 Enviando correo de confirmación...")
+        print(
+            f"📧 [Hilo {current_thread.name}] Enviando correo de confirmación...")
         email = EmailMessage()
         email["From"] = EMAIL_FROM
         email["To"] = EMAIL_TO
@@ -462,17 +440,23 @@ def process_rut(rut_info: Dict[str, str]) -> None:
             smtp.starttls()
             smtp.login(EMAIL_FROM, EMAIL_PASS)
             smtp.send_message(email)
-        logging.info("Correo enviado con éxito.")
+        print(f"✅ [Hilo {current_thread.name}] Correo enviado exitosamente")
 
     except Exception as e:
-        error_msg = f"❌ Error en marcaje (hilo {current_thread.name}): {str(e)}"
+        error_msg = f"""❌ Error en marcaje para RUT {rut[:4]}****:
+{str(e)}
+
+📋 LOGS DEL PROCESO:
+{chr(10).join(log_messages)}"""
         print(error_msg)
         logging.error(error_msg)
 
+        # Enviar correo de error
+        print(f"📧 [Hilo {current_thread.name}] Enviando correo de error...")
         email = EmailMessage()
         email["From"] = EMAIL_FROM
         email["To"] = EMAIL_TO
-        email["Subject"] = f"Error en {action_type} ({current_location})"
+        email["Subject"] = f"Error en {action_type if 'action_type' in locals() else 'MARCAJE'} ({location_type if 'location_type' in locals() else 'N/A'})"
         email.set_content(error_msg)
 
         try:
@@ -480,29 +464,34 @@ def process_rut(rut_info: Dict[str, str]) -> None:
                 smtp.starttls()
                 smtp.login(EMAIL_FROM, EMAIL_PASS)
                 smtp.send_message(email)
-            logging.info("Correo de error enviado.")
+            print(f"✅ [Hilo {current_thread.name}] Correo de error enviado")
         except Exception as mail_error:
-            logging.error(
-                f"No se pudo enviar correo de error: {str(mail_error)}")
+            print(
+                f"❌ [Hilo {current_thread.name}] No se pudo enviar correo de error: {str(mail_error)}")
 
     finally:
-        logging.info(
-            f"🏁 Finalizando proceso para RUT: {rut} en hilo: {current_thread.name}")
+        print(
+            f"🏁 [Hilo {current_thread.name}] Proceso finalizado para RUT: {rut[:4]}****")
 
 
 def get_active_ruts() -> List[Dict[str, str]]:
     """Get all valid RUTs from LaunchDarkly flags"""
+    print("🏳️ Obteniendo RUTs activos desde LaunchDarkly...")
     active_ruts = []
     try:
         context = Context.builder("default").name("default").build()
+        print("🔗 Conectando con LaunchDarkly...")
         all_flags = ldclient.get().all_flags_state(context)
 
         if all_flags.valid:
             flags_dict = all_flags.to_json_dict()
+            print(f"📊 Total de flags encontrados: {len(flags_dict)}")
             logging.info(f"Flags encontrados: {list(flags_dict.keys())}")
 
+            valid_ruts_count = 0
             for flag_key in flags_dict:
                 if not flag_key.startswith('$') and '_' in flag_key:
+                    print(f"🔍 Analizando flag: {flag_key}")
                     rut, postal_code = flag_key.lower().split('_')
                     if is_valid_rut(rut):
                         rut_info = {
@@ -510,11 +499,19 @@ def get_active_ruts() -> List[Dict[str, str]]:
                             'postal_code': postal_code
                         }
                         active_ruts.append(rut_info)
-                        logging.info(
-                            f"RUT válido encontrado: {rut} (postal_code: {postal_code})")
+                        valid_ruts_count += 1
+                        print(
+                            f"✅ RUT válido #{valid_ruts_count}: {rut[:4]}**** (código postal: {postal_code})")
+                    else:
+                        print(f"❌ RUT inválido en flag: {flag_key}")
+
+            print(f"📋 Total de RUTs válidos encontrados: {len(active_ruts)}")
+        else:
+            print("❌ Error: Estado de flags de LaunchDarkly no válido")
 
         return active_ruts
     except Exception as e:
+        print(f"❌ Error obteniendo RUTs: {str(e)}")
         logging.error(f"Error obteniendo RUTs: {str(e)}")
         return []
 
@@ -528,42 +525,72 @@ def get_random_delay() -> int:
 
 # Verificar si debemos ejecutar el script
 if __name__ == "__main__":
-    print("🚀 Iniciando script de marcaje...")
+    print("=" * 60)
+    print("🚀 INICIANDO SCRIPT DE MARCAJE AUTOMÁTICO")
+    print("=" * 60)
+
+    print("🔍 Verificando configuración inicial...")
     if not CLOCK_IN_ACTIVE:
+        print("⏹️ Script desactivado por variable CLOCK_IN_ACTIVE")
         logging.info(
             "Script desactivado por variable de entorno CLOCK_IN_ACTIVE")
         exit()
 
+    print("✅ Script activo, continuando...")
+
     if is_holiday():
-        logging.info("Hoy es feriado, no se ejecutará el marcaje")
+        print("🎄 Terminando ejecución - hoy es feriado")
         exit()
 
-    # Agregar delay aleatorio antes de procesar
-    delay_minutes = get_random_delay()
-    print(
-        f"⏰ Esperando {delay_minutes} minutos para simular comportamiento humano...")
-    sleep(delay_minutes * 60)  # Convertir minutos a segundos
+    # Agregar delay aleatorio solo si no está en modo debug
+    if not DEBUG_MODE:
+        delay_minutes = 0  # get_random_delay()
+        print(f"⏰ Aplicando delay aleatorio: {delay_minutes} minutos")
+        print(f"⏳ Esperando para simular comportamiento humano...")
+        logging.info(
+            f"Aplicando delay de {delay_minutes} minutos en modo producción")
+        sleep(delay_minutes * 60)  # Convertir minutos a segundos
+        print("✅ Delay completado, continuando...")
+    else:
+        print("🔄 Modo DEBUG activo: ejecutando inmediatamente")
+        logging.info("Ejecutando en modo DEBUG: sin delay aleatorio")
 
+    print("🔍 Obteniendo lista de RUTs para procesar...")
     ruts = get_active_ruts()
 
     if not ruts:
-        print("❌ No se encontraron RUTs válidos")
+        print("❌ No se encontraron RUTs válidos para procesar")
+        print("🏁 Finalizando script")
     else:
-        print(f"👥 Procesando {len(ruts)} RUTs...")
-        logging.info(f"Procesando {len(ruts)} RUTs en paralelo")
+        print("=" * 40)
+        print(f"👥 INICIANDO PROCESAMIENTO DE {len(ruts)} RUTs")
+        print("=" * 40)
 
         with ThreadPoolExecutor(max_workers=min(len(ruts), 5)) as executor:
+            print(f"🧵 Usando {min(len(ruts), 5)} hilos paralelos")
             futures = []
-            for rut_info in ruts:
+
+            for i, rut_info in enumerate(ruts):
+                print(
+                    f"🚀 Enviando RUT {i+1}/{len(ruts)} al pool de hilos: {rut_info['rut'][:4]}****")
                 future = executor.submit(process_rut, rut_info)
                 futures.append((future, rut_info))
 
+            print("⏳ Esperando completación de todos los hilos...")
+            completed = 0
             for future, rut_info in futures:
                 try:
                     future.result()
+                    completed += 1
+                    print(
+                        f"✅ Completado {completed}/{len(futures)} - RUT: {rut_info['rut'][:4]}****")
                 except Exception as e:
-                    logging.error(
-                        f"Thread para RUT {rut_info['rut']} falló: {str(e)}")
+                    completed += 1
+                    print(
+                        f"❌ Error {completed}/{len(futures)} - RUT: {rut_info['rut'][:4]}****: {str(e)}")
 
-        logging.info("✅ Procesamiento de todos los RUTs completado")
-        print("✅ Procesamiento completado")
+        print("=" * 40)
+        print("🎉 PROCESAMIENTO COMPLETADO")
+        print("=" * 40)
+        print(f"📊 RUTs procesados: {len(ruts)}")
+        print("🏁 Script finalizado exitosamente")
