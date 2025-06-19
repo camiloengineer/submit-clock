@@ -230,8 +230,13 @@ def process_rut(rut: str) -> None:
     # Capturar logs para el email
     log_messages = []
 
+    # Get Chile time at the start of processing this RUT
+    chile_tz = pytz.timezone('America/Santiago')
+    start_time = datetime.now(chile_tz)
+
     try:
-        log_messages.append(f"🚀 Iniciando procesamiento RUT: {rut[:4]}****")
+        log_messages.append(f"🚀 Iniciando procesamiento RUT: {rut[:4]}**** a las {start_time.strftime('%H:%M:%S')} (CLT)")
+        print(f"🚀 [Hilo {current_thread.name}] Iniciando RUT {rut[:4]}**** a las {start_time.strftime('%H:%M:%S')} (CLT)")
 
         # DELAY ALEATORIO POR CADA RUT (solo en modo producción)
         if not DEBUG_MODE:
@@ -254,7 +259,7 @@ def process_rut(rut: str) -> None:
         chile_time = datetime.now(chile_tz)
 
         print(
-            f"🕐 [Hilo {current_thread.name}] Hora Chile: {chile_time.strftime('%H:%M:%S')} ({chile_tz.tzname(chile_time)})")
+            f"🕐 [Hilo {current_thread.name}] Hora Chile: {chile_time.strftime('%H:%M:%S')} (CLT)")
         print(f"📍 [Hilo {current_thread.name}] Ubicación: Sin coordenadas")
 
         # Determine action type
@@ -263,7 +268,7 @@ def process_rut(rut: str) -> None:
 
         if DEBUG_MODE:
             log_messages.append("🧪 Modo DEBUG activo - simulando marcaje")
-            mensaje = f"🧪 DEBUG activo: no se ejecutó marcaje. Hora Chile: {chile_time.strftime('%H:%M:%S')}"
+            mensaje = f"🧪 DEBUG activo: no se ejecutó marcaje. Hora Chile: {chile_time.strftime('%H:%M:%S')} (CLT)"
         else:
             log_messages.append("⚡ Iniciando marcaje real...")
             print(f"⚡ [Hilo {current_thread.name}] Iniciando marcaje real...")
@@ -350,7 +355,7 @@ def process_rut(rut: str) -> None:
 
             # Crear mensaje con logs incluidos
             log_summary = "\n".join(log_messages[-10:])  # Últimos 10 logs
-            mensaje = f"""✅ {action_type} realizada con éxito a las {chile_time.strftime('%H:%M:%S')} (Chile - {chile_tz.tzname(chile_time)}).
+            mensaje = f"""✅ {action_type} realizada con éxito a las {chile_time.strftime('%H:%M:%S')} (Chile - CLT).
 📍 Geolocalización: Sin coordenadas
 📍 Ubicación: Sin dirección
 
@@ -403,8 +408,15 @@ def process_rut(rut: str) -> None:
                 f"❌ [Hilo {current_thread.name}] No se pudo enviar correo de error: {str(mail_error)}")
 
     finally:
+        # Log end time and calculate duration
+        end_time = datetime.now(chile_tz)
+        duration = (end_time - start_time).total_seconds()
+        minutes, seconds = divmod(duration, 60)
+        
         print(
-            f"🏁 [Hilo {current_thread.name}] Proceso finalizado para RUT: {rut[:4]}****")
+            f"🏁 [Hilo {current_thread.name}] Proceso finalizado para RUT: {rut[:4]}**** a las {end_time.strftime('%H:%M:%S')} (CLT)")
+        print(
+            f"⏱️ [Hilo {current_thread.name}] Duración total: {int(minutes)} minutos y {int(seconds)} segundos")
 
 
 def get_active_ruts() -> List[str]:
@@ -456,7 +468,13 @@ if __name__ == "__main__":
     print("=" * 60)
     print("🚀 INICIANDO SCRIPT DE MARCAJE AUTOMÁTICO")
     print("=" * 60)
-
+    
+    # Get Chile time right at the start
+    chile_tz = pytz.timezone('America/Santiago')
+    chile_time = datetime.now(chile_tz)
+    print(f"⏰ HORA DE INICIO: {chile_time.strftime('%Y-%m-%d %H:%M:%S')} (CLT)")
+    logging.info(f"Script iniciado a las: {chile_time.strftime('%Y-%m-%d %H:%M:%S')} (CLT)")
+    
     print("🔍 Verificando configuración inicial...")
     if not CLOCK_IN_ACTIVE:
         print("⏹️ Script desactivado por variable CLOCK_IN_ACTIVE")
@@ -506,8 +524,16 @@ if __name__ == "__main__":
                     print(
                         f"❌ Error {completed}/{len(futures)} - RUT: {rut[:4]}****: {str(e)}")
 
+        # Calculate and show end time and duration
+        end_time = datetime.now(chile_tz)
+        total_duration = (end_time - chile_time).total_seconds()
+        total_minutes, total_seconds = divmod(total_duration, 60)
+        
         print("=" * 40)
         print("🎉 PROCESAMIENTO COMPLETADO")
         print("=" * 40)
         print(f"📊 RUTs procesados: {len(ruts)}")
+        print(f"⏰ Hora de inicio: {chile_time.strftime('%H:%M:%S')} (CLT)")
+        print(f"⏰ Hora de finalización: {end_time.strftime('%H:%M:%S')} (CLT)")
+        print(f"⏱️ Duración total: {int(total_minutes)} minutos y {int(total_seconds)} segundos")
         print("🏁 Script finalizado exitosamente")
