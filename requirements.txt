@@ -4,3 +4,4 @@ requests==2.31.0
 launchdarkly-server-sdk==9.0.0
 urllib3==2.0.7
 # googlemaps==4.10.0  # Comentado - ya no necesario
+pytz==2023.3

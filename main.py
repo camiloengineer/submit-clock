@@ -6,6 +6,7 @@ import requests
 import urllib3
 import ldclient
 import threading
+import pytz
 from datetime import datetime, date
 from dotenv import load_dotenv
 from ldclient import Context
@@ -248,12 +249,12 @@ def process_rut(rut: str) -> None:
             print(
                 f"🔄 [Hilo {current_thread.name}] Modo DEBUG activo: sin delay para RUT {rut[:4]}****")
 
-        # Get Chile time
-        chile_tz = timezone(timedelta(hours=-4))
+        # Get Chile time using pytz to handle DST (Daylight Saving Time) changes automatically
+        chile_tz = pytz.timezone('America/Santiago')
         chile_time = datetime.now(chile_tz)
 
         print(
-            f"🕐 [Hilo {current_thread.name}] Hora Chile: {chile_time.strftime('%H:%M:%S')}")
+            f"🕐 [Hilo {current_thread.name}] Hora Chile: {chile_time.strftime('%H:%M:%S')} ({chile_tz.tzname(chile_time)})")
         print(f"📍 [Hilo {current_thread.name}] Ubicación: Sin coordenadas")
 
         # Determine action type
@@ -349,7 +350,7 @@ def process_rut(rut: str) -> None:
 
             # Crear mensaje con logs incluidos
             log_summary = "\n".join(log_messages[-10:])  # Últimos 10 logs
-            mensaje = f"""✅ {action_type} realizada con éxito a las {chile_time.strftime('%H:%M:%S')} (Chile).
+            mensaje = f"""✅ {action_type} realizada con éxito a las {chile_time.strftime('%H:%M:%S')} (Chile - {chile_tz.tzname(chile_time)}).
 📍 Geolocalización: Sin coordenadas
 📍 Ubicación: Sin dirección
 
