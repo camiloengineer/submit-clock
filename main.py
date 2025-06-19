@@ -16,7 +16,7 @@ from email.message import EmailMessage
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from typing import List
+from typing import List, Dict
 from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor
 
@@ -240,7 +240,7 @@ def process_rut(rut: str) -> None:
 
         # DELAY ALEATORIO POR CADA RUT (solo en modo producción)
         if not DEBUG_MODE:
-            delay_minutes = get_random_delay()
+            delay_minutes = get_random_delay(rut)
             print(
                 f"⏰ [Hilo {current_thread.name}] Aplicando delay aleatorio para RUT {rut[:4]}****: {delay_minutes} minutos")
             print(
@@ -456,12 +456,41 @@ def get_active_ruts() -> List[str]:
         return []
 
 
-def get_random_delay() -> int:
-    """Genera un delay aleatorio entre 1 y 20 minutos"""
-    delay_minutes = random.randint(1, 20)
-    logging.info(f"⏰ Delay aleatorio generado: {delay_minutes} minutos")
+def get_random_delay(rut: str) -> int:
+    """Genera un delay aleatorio entre 1 y 20 minutos y evita coincidencias"""
+    global DELAY_REGISTRY, DELAY_COINCIDENCES
+    
+    # Máximo intentos para evitar un bucle infinito
+    max_attempts = 10
+    attempts = 0
+    
+    while attempts < max_attempts:
+        delay_minutes = random.randint(1, 20)
+        
+        # Si es el primer RUT o no hay coincidencia, aceptamos el delay
+        if len(DELAY_REGISTRY) == 0 or delay_minutes not in DELAY_REGISTRY.values():
+            break
+            
+        # Si hay coincidencia, incrementamos el contador e intentamos de nuevo
+        attempts += 1
+        # Solo log a nivel debug para no llenar los logs con intentos
+        logging.debug(f"Coincidencia detectada con delay de {delay_minutes} minutos. Reintentando... ({attempts}/{max_attempts})")        # Si después de varios intentos seguimos con coincidencia, aceptamos pero avisamos
+    if attempts == max_attempts:
+        DELAY_COINCIDENCES += 1
+        logging.warning(f"⚠️ No se pudo evitar coincidencia después de {max_attempts} intentos para RUT {rut[:4]}****")
+        print(f"⚠️ No se pudo evitar coincidencia después de {max_attempts} intentos. Se usará delay de {delay_minutes} minutos.")
+    
+    # Registrar el delay final para este RUT
+    DELAY_REGISTRY[rut] = delay_minutes
+    
+    # Log normal sin alertas extras cuando todo funciona bien
+    logging.info(f"Delay aleatorio generado para RUT {rut[:4]}****: {delay_minutes} minutos")
     return delay_minutes
 
+
+# Variables para monitoreo de delays
+DELAY_REGISTRY: Dict[str, int] = {}  # Registro de delays por RUT
+DELAY_COINCIDENCES = 0  # Contador de coincidencias de delays
 
 # Verificar si debemos ejecutar el script
 if __name__ == "__main__":
@@ -533,6 +562,16 @@ if __name__ == "__main__":
         print("🎉 PROCESAMIENTO COMPLETADO")
         print("=" * 40)
         print(f"📊 RUTs procesados: {len(ruts)}")
+        
+        # Mostrar resumen de delays
+        print("📊 RESUMEN DE DELAYS:")
+        for r, d in DELAY_REGISTRY.items():
+            print(f"  • RUT {r[:4]}****: {d} minutos")
+        
+        if DELAY_COINCIDENCES > 0:
+            print(f"⚠️ ATENCIÓN: Se detectaron {DELAY_COINCIDENCES} coincidencia(s) de delays que no pudieron evitarse")
+            logging.warning(f"Se detectaron {DELAY_COINCIDENCES} coincidencia(s) de delays que no pudieron evitarse")
+        
         print(f"⏰ Hora de inicio: {chile_time.strftime('%H:%M:%S')} (CLT)")
         print(f"⏰ Hora de finalización: {end_time.strftime('%H:%M:%S')} (CLT)")
         print(f"⏱️ Duración total: {int(total_minutes)} minutos y {int(total_seconds)} segundos")
